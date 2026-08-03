@@ -1,0 +1,17 @@
+{
+  "拓扑": "Feature Pipeline Architecture",
+  "节点": [
+    {"id": "repo", "名称": "Repo: feature-center", "类型": "repo", "x": 40, "y": 40, "width": 760, "height": 360},
+    {"id": "client", "名称": "Fountain DAG", "类型": "client", "x": 90, "y": 120},
+    {"id": "builder", "名称": "build_instance Op", "类型": "module", "x": 330, "y": 120},
+    {"id": "mq", "名称": "Kafka / MQ", "类型": "mq", "x": 570, "y": 120},
+    {"id": "store", "名称": "Feature Store", "类型": "storage", "x": 330, "y": 260},
+    {"id": "tcc", "名称": "TCC Config", "类型": "config", "x": 570, "y": 260}
+  ],
+  "边": [
+    {"from": "client", "to": "builder", "关系": "sync_call", "label": "sample"},
+    {"from": "builder", "to": "mq", "关系": "async_event", "label": "emit"},
+    {"from": "builder", "to": "store", "关系": "read_write", "label": "read/write"},
+    {"from": "tcc", "to": "builder", "关系": "config", "label": "config"}
+  ]
+}

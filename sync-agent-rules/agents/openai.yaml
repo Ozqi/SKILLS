@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sync Agent Rules"
+  short_description: "Sync agent-rule files"
+  default_prompt: "Sync the repository agent-rule files and report drift."
