@@ -16,6 +16,7 @@ Personal reusable skills for TRAE CLI, Claude Code, and related agent workflows.
 | Skill | 分类 | 标签 | 用途 |
 |---|---|---|---|
 | `chrome-cdp-session` | 工具类 / 实施经验 | `browser`、`cdp`、`login-state`、`debug` | 复用当前 Chrome 登录态做浏览器检查、CDP 连接和网页调试。 |
+| `lark-md-sync` | 工具类 | `lark`、`feishu`、`markdown`、`sync` | 双向同步本地 Markdown 与飞书 Drive 原生 Markdown 文件，支持 dry-run、状态检查和三方合并。 |
 | `tmux-automation` | 工具类 / 实施经验 | `terminal`、`tmux`、`long-running`、`tui`、`ssh` | 管理长任务、TUI 检查、pane 截图、SSH 会话和可恢复终端工作流。 |
 | `draw-topology-json` | 设计类 | `topology`、`json`、`semantic-model`、`diagram-source` | 把复杂系统关系抽成语义拓扑 JSON，作为 Mermaid / draw.io 等渲染目标的事实源。 |
 | `draw-mermaid` | 设计类 / 开发类 | `mermaid`、`diagram`、`architecture`、`flowchart` | 将需求或 topology JSON 渲染为 Mermaid 图，`DESIGN.md` 维护视觉风格。 |

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Lark Markdown Sync"
+  short_description: "Sync local Markdown with Lark Drive"
+  default_prompt: "Use $lark-md-sync to check and sync local Markdown files with Lark Drive native Markdown."
