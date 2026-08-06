@@ -13,15 +13,14 @@ Personal reusable skills for TRAE CLI, Claude Code, and related agent workflows.
 
 ## Skill 索引
 
-| Skill | 分类 | 标签 | 用途 |
-|---|---|---|---|
-| `chrome-cdp-session` | 工具类 / 实施经验 | `browser`、`cdp`、`login-state`、`debug` | 复用当前 Chrome 登录态做浏览器检查、CDP 连接和网页调试。 |
-| `lark-md-sync` | 工具类 | `lark`、`feishu`、`markdown`、`sync` | 双向同步本地 Markdown 与飞书 Drive 原生 Markdown 文件，支持 dry-run、状态检查和三方合并。 |
-| `tmux-automation` | 工具类 / 实施经验 | `terminal`、`tmux`、`long-running`、`tui`、`ssh` | 管理长任务、TUI 检查、pane 截图、SSH 会话和可恢复终端工作流。 |
-| `draw-topology-json` | 设计类 | `topology`、`json`、`semantic-model`、`diagram-source` | 把复杂系统关系抽成语义拓扑 JSON，作为 Mermaid / draw.io 等渲染目标的事实源。 |
-| `draw-mermaid` | 设计类 / 开发类 | `mermaid`、`diagram`、`architecture`、`flowchart` | 将需求或 topology JSON 渲染为 Mermaid 图，`DESIGN.md` 维护视觉风格。 |
-| `draw-drawio-xml` | 设计类 / 开发类 | `drawio`、`xml`、`diagram`、`architecture` | 将拓扑 JSON 或自然语言关系生成 draw.io / diagrams.net 可导入 XML。 |
-| `opencode-agent-prompts` | 开发类 / 实施经验 | `opencode`、`agent`、`prompt`、`style` | 学习 OpenCode 源码中控制 Agent 行为、工作模式、工具使用和终端输出风格的提示词。 |
+| Skill                | 分类         | 标签                                                  | 用途                                                             |
+| -------------------- | ---------- | --------------------------------------------------- | -------------------------------------------------------------- |
+| `chrome-cdp-session` | 工具类 / 实施经验 | `browser`、`cdp`、`login-state`、`debug`               | 复用当前 Chrome 登录态做浏览器检查、CDP 连接和网页调试。                             |
+| `lark-md-sync`       | 工具类        | `lark`、`feishu`、`markdown`、`sync`                   | 双向同步本地 Markdown 与飞书 Drive 原生 Markdown 文件，支持 dry-run、状态检查和三方合并。 |
+| `tmux-skill`         | 工具类 / 实施经验 | `terminal`、`tmux`、`long-running`、`tui`、`ssh`        | 管理长任务、TUI 检查、pane 截图、SSH 会话、定时检查和可恢复终端工作流。                     |
+| `draw-topology-json` | 设计类        | `topology`、`json`、`semantic-model`、`diagram-source` | 把复杂系统关系抽成语义拓扑 JSON，作为 Mermaid / draw.io 等渲染目标的事实源。             |
+| `draw-mermaid`       | 设计类 / 开发类  | `mermaid`、`diagram`、`architecture`、`flowchart`      | 将需求或 topology JSON 渲染为 Mermaid 图，`DESIGN.md` 维护视觉风格。           |
+| `draw-drawio-xml`    | 设计类 / 开发类  | `drawio`、`xml`、`diagram`、`architecture`             | 将拓扑 JSON 或自然语言关系生成 draw.io / diagrams.net 可导入 XML。             |
 
 ## 标签约定
 
@@ -36,3 +35,19 @@ Personal reusable skills for TRAE CLI, Claude Code, and related agent workflows.
 
 - 文风切换：区分终端回复、Wiki 正文、README、报告和代码注释的输出风格。
 - Skill 路由：后续可按分类生成更稳定的索引，供 Agent 先选 skill 再读具体 `SKILL.md`。
+
+
+
+# 优秀资源
+
+分类摆放：
+
+设计类，画图，前端页面：
+1. 
+
+开发提效
+1. 
+
+
+网络搜索&社交媒体
+1. 
