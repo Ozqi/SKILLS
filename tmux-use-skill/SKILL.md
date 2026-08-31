@@ -3,27 +3,17 @@ name: tmux-skill
 description: 通过 tmux 管理长任务、TUI、SSH 和可恢复终端。创建任务窗口时默认复用用户当前 session，并沿用 tmux 配置的默认 shell。Use for tmux sessions, windows, panes, terminal inspection, long-running commands, TUI verification, SSH workspaces, and agent notifications.
 ---
 
-# tmux 自动化
+# tmux
 
-把 tmux 用作可观察、可恢复的终端任务管理器。短命令和普通文件操作继续使用当前环境的专用工具。
+把 tmux 用作可观察、可恢复的终端任务管理器。长程任务可以利用tmux起新的窗口来执行，不占用当前Agent窗口；短命令和普通文件操作继续使用当前环境的专用工具。
 
+注意：非必要不起新session。
 ## 适用场景
 
 - 长任务、开发服务、构建测试和日志 watcher。
 - TUI 运行、键盘驱动和真实终端截图。
 - SSH、多 pane 工作台和断线恢复。
 - 命令结束后通知另一个 CLI Agent pane。
-
-## 层级与用户可见性
-
-层级固定为 `server > session > window > pane`：
-
-- 一个 tmux server 管理多个 session。
-- 一个 client 同时连接并展示一个 session。
-- 当前 session 内的 window 是用户可切换的页签；pane 是 window 内的分屏。
-- 其他 session 需要 `switch-client` 或重新 attach 后才能看到。
-
-用户需要查看新任务时，默认在其当前 session 创建 window；需要同屏观察时，在目标 window 创建 pane。新 session 只用于用户明确要求、当前没有 session，或任务需要独立生命周期的场景。
 
 ## Agent 工作流
 
