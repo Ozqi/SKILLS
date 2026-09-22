@@ -57,7 +57,9 @@ Agent 的上下文窗口是有限的工作记忆：系统规则、用户指令�
 网络搜索&社交媒体，Agent-Reach
 - 部分依赖openCLI链接浏览器插件调试模式操作。（总之对于热门社媒网站很高效，冷门网站很拉胯）
 
-
+监控 / Grafana MCP：
+- 官方仓库：https://github.com/grafana/mcp-grafana
+- 官方文档：https://grafana.com/docs/grafana/latest/developer-resources/mcp/
 
 
 # 方法论
