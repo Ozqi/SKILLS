@@ -16,7 +16,7 @@ from __future__ import annotations
 SCRIPT_META = {
     "name": "lark_md_sync",
     "summary": "Bidirectionally sync local Markdown files with Lark Drive native Markdown files via sara-lark-cli.",
-    "inputs": "CLI subcommands (track|status|push|pull|sync|untrack|init-config|plan-config), local Markdown paths, config mappings, Lark file tokens or target folders, and a local state file.",
+    "inputs": "CLI subcommands (cd|track|status|push|pull|sync|untrack|init-config|plan-config|list|ls), local Markdown paths, config mappings, Lark file tokens or target folders, and a local state file.",
     "outputs": "stdout plan/status plus local state, cached base files, and optional local/remote Markdown writes.",
     "writes": "tmp/lark-md-sync/** by default; local Markdown files on pull/sync --apply; remote Lark Markdown files on push/sync --apply.",
     "idempotent": True,
@@ -31,6 +31,7 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,7 @@ FETCH_DIR = Path("tmp/lark-md-sync/fetch")
 MERGE_DIR = Path("tmp/lark-md-sync/merge")
 STATE_VERSION = 1
 LARK_CLI = os.environ.get("SARA_LARK_CLI", "sara-lark-cli")
+META_CLI = os.environ.get("LARK_CLI", "lark-cli")
 
 
 class ToolError(Exception):
@@ -216,6 +218,13 @@ def parse_json_stdout(result: subprocess.CompletedProcess[str]) -> dict[str, Any
     if isinstance(data, dict):
         return data
     raise ToolError(f"{LARK_CLI} JSON output was not an object")
+
+
+def lark_data(cmd: list[str], root: Path) -> Any:
+    data = parse_json_stdout(run_cmd(cmd, root))
+    if data.get("ok") is False:
+        raise ToolError(str(data.get("error") or data))
+    return data.get("data", {})
 
 
 def find_token(value: Any) -> str | None:
@@ -679,11 +688,204 @@ def pull_or_sync(args: argparse.Namespace, sync_mode: bool) -> int:
     return 0
 
 
-def list_cmd(args: argparse.Namespace) -> int:
+def infer_target(value: str, identity: str = "user") -> dict[str, str]:
+    target = value.strip()
+    if not target:
+        raise ToolError("empty Lark target")
+    parsed = urlparse(target)
+    parts = [part for part in parsed.path.split("/") if part]
+    kind = "url" if parsed.scheme and parsed.netloc else "token"
+    token = ""
+    for marker, marker_kind in (
+        ("wiki", "wiki"),
+        ("docx", "docx"),
+        ("docs", "docs"),
+        ("folder", "folder"),
+        ("file", "file"),
+    ):
+        if marker in parts:
+            index = parts.index(marker)
+            if index + 1 < len(parts):
+                kind = marker_kind
+                token = parts[index + 1]
+                break
+    return {
+        "target": target,
+        "kind": kind,
+        "token": token,
+        "identity": identity,
+        "updated_at": now_iso(),
+    }
+
+
+def cd_cmd(args: argparse.Namespace) -> int:
     state = load_state(args.state)
+    current = infer_target(args.target, args.identity)
+    state["current"] = current
+    save_state(args.state, state)
+    label = current["token"] or current["target"]
+    print(f"current\t{current['kind']}\t{label}")
+    return 0
+
+
+def data_items(data: Any) -> list[Any]:
+    if isinstance(data, list):
+        return data
+    if not isinstance(data, dict):
+        return []
+    for key in ("items", "files", "nodes", "children"):
+        value = data.get(key)
+        if isinstance(value, list):
+            return value
+    for value in data.values():
+        items = data_items(value)
+        if items:
+            return items
+    return []
+
+
+def item_field(item: Any, *names: str) -> str:
+    if not isinstance(item, dict):
+        return ""
+    for name in names:
+        value = item.get(name)
+        if isinstance(value, str) and value:
+            return value
+        if isinstance(value, bool):
+            return str(value).lower()
+        if isinstance(value, int):
+            return str(value)
+    return ""
+
+
+def inspect_current(root: Path, current: dict[str, Any]) -> dict[str, Any]:
+    target = str(current.get("target") or "")
+    identity = str(current.get("identity") or "user")
+    return lark_data(
+        [
+            META_CLI,
+            "drive",
+            "+inspect",
+            "--url",
+            target,
+            "--as",
+            identity,
+            "--format",
+            "json",
+        ],
+        root,
+    )
+
+
+def wiki_children(root: Path, current: dict[str, Any], page_size: int) -> list[Any]:
+    target = str(current.get("target") or "")
+    identity = str(current.get("identity") or "user")
+    node = lark_data(
+        [
+            META_CLI,
+            "wiki",
+            "+node-get",
+            "--node-token",
+            target,
+            "--as",
+            identity,
+            "--format",
+            "json",
+        ],
+        root,
+    )
+    if not node.get("has_child"):
+        return []
+    data = lark_data(
+        [
+            META_CLI,
+            "wiki",
+            "+node-list",
+            "--space-id",
+            str(node["space_id"]),
+            "--parent-node-token",
+            str(node["node_token"]),
+            "--page-size",
+            str(page_size),
+            "--as",
+            identity,
+            "--format",
+            "json",
+        ],
+        root,
+    )
+    return data_items(data)
+
+
+def folder_children(root: Path, token: str, identity: str, page_size: int) -> list[Any]:
+    data = lark_data(
+        [
+            META_CLI,
+            "drive",
+            "files",
+            "list",
+            "--folder-token",
+            token,
+            "--page-size",
+            str(page_size),
+            "--as",
+            identity,
+            "--format",
+            "json",
+        ],
+        root,
+    )
+    return data_items(data)
+
+
+def remote_listing(root: Path, current: dict[str, Any], page_size: int) -> dict[str, Any]:
+    meta = inspect_current(root, current)
+    identity = str(current.get("identity") or "user")
+    kind = str(meta.get("type") or current.get("kind") or "")
+    token = str(meta.get("token") or current.get("token") or "")
+    children: list[Any] = []
+    wiki_node = meta.get("wiki_node") if isinstance(meta.get("wiki_node"), dict) else {}
+    if wiki_node and wiki_node.get("node_token"):
+        children = wiki_children(root, current, page_size)
+    elif kind == "folder" and token:
+        children = folder_children(root, token, identity, page_size)
+    return {"meta": meta, "children": children}
+
+
+def print_remote_listing(listing: dict[str, Any]) -> None:
+    meta = listing["meta"]
+    title = str(meta.get("title") or "")
+    kind = str(meta.get("type") or "")
+    token = str(meta.get("token") or "")
+    url = str(meta.get("url") or meta.get("input_url") or "")
+    print(f"remote\t{kind}\t{token}\t{title}\t{url}")
+    for child in listing["children"]:
+        title = item_field(child, "title", "name")
+        kind = item_field(child, "obj_type", "type", "file_type")
+        token = item_field(child, "node_token", "token", "file_token", "obj_token")
+        has_child = item_field(child, "has_child")
+        print(f"child\t{kind}\t{token}\t{title}\t{has_child}")
+
+
+def list_cmd(args: argparse.Namespace) -> int:
+    root = args.root.resolve()
+    state = load_state(args.state)
+    current = state.get("current")
+    result: dict[str, Any] = {"current": current if isinstance(current, dict) else None, "tracked": state["files"]}
+    if isinstance(current, dict) and current.get("target") and not args.no_remote:
+        result["remote"] = remote_listing(root, current, args.page_size)
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if isinstance(current, dict) and current.get("target"):
+        print(
+            f"current\t{current.get('kind', '')}\t{current.get('token', '')}\t{current.get('target', '')}"
+        )
+    if "remote" in result:
+        print_remote_listing(result["remote"])
     for rel, mapping in sorted(state["files"].items()):
         print(
-            f"{rel}\t{mapping.get('file_token', '')}\t{mapping.get('identity', 'user')}"
+            f"tracked\t{rel}\t{mapping.get('file_token', '')}\t{mapping.get('identity', 'user')}"
         )
     return 0
 
@@ -745,8 +947,16 @@ def add_config(parser: argparse.ArgumentParser) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=SCRIPT_META["summary"])
+    parser = argparse.ArgumentParser(
+        prog=os.environ.get("LARK_MD_SYNC_PROG"),
+        description=SCRIPT_META["summary"],
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("cd", help="Set the current Lark target URL in local sync state.")
+    p.add_argument("target")
+    p.add_argument("--state", type=Path, default=DEFAULT_STATE)
+    p.add_argument("--as", dest="identity", default="user", choices=["user", "bot"])
 
     p = sub.add_parser("track", help="Track an existing remote Markdown file.")
     add_common(p)
@@ -766,8 +976,12 @@ def main(argv: list[str] | None = None) -> int:
     add_common(p)
     p.add_argument("paths", nargs="*")
 
-    p = sub.add_parser("list", help="List tracked mappings.")
+    p = sub.add_parser("list", aliases=["ls"], help="List tracked mappings and current Lark target metadata.")
+    p.add_argument("--root", type=Path, default=Path.cwd())
     p.add_argument("--state", type=Path, default=DEFAULT_STATE)
+    p.add_argument("--page-size", type=int, default=50)
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--no-remote", action="store_true", help="Only print local sync state; do not query Lark metadata.")
 
     p = sub.add_parser("init-config", help="Write an example directory mapping config.")
     p.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
@@ -818,11 +1032,13 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     try:
+        if args.cmd == "cd":
+            return cd_cmd(args)
         if args.cmd == "track":
             return track(args)
         if args.cmd == "untrack":
             return untrack(args)
-        if args.cmd == "list":
+        if args.cmd in {"list", "ls"}:
             return list_cmd(args)
         if args.cmd == "init-config":
             return init_config(args)
