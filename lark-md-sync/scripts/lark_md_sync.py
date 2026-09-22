@@ -949,7 +949,27 @@ def add_config(parser: argparse.ArgumentParser) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog=os.environ.get("LARK_MD_SYNC_PROG"),
-        description=SCRIPT_META["summary"],
+        description="Lark Markdown sync and read-only remote navigator for Agents.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""commands:
+  cd <lark-url>        Set current remote target in local state; no remote write.
+  ls                  Show current target meta, child nodes/files, and tracked mappings.
+  track <md>          Bind a local Markdown file to an existing remote Markdown token.
+  untrack [md...]     Remove local mappings only; never delete remote files.
+  init-config         Create lark-md-sync.config.json example.
+  plan-config         Preview files selected by directory mappings.
+  status [md...]      Compare local/base/remote content.
+  push [md...]        Push local Markdown to Lark; dry-run unless --apply.
+  pull [md...]        Pull remote Markdown to local; dry-run unless --apply.
+  sync [md...]        Bidirectional sync with merge/conflict policy; dry-run unless --apply.
+
+examples:
+  lark-sync cd 'https://bytedance.larkoffice.com/wiki/xxx'
+  lark-sync ls
+  lark-sync ls --json
+  lark-sync status --config lark-md-sync.config.json
+  lark-sync push --config lark-md-sync.config.json --apply
+""",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
