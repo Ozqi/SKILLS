@@ -18,7 +18,7 @@ SCRIPT_META = {
     "summary": "Bidirectionally sync local Markdown files with Lark Drive native Markdown files via sara-lark-cli.",
     "inputs": "CLI subcommands (cd|track|status|push|pull|sync|untrack|init-config|plan-config|list|ls), local Markdown paths, config mappings, Lark file tokens or target folders, and a local state file.",
     "outputs": "stdout plan/status plus local state, cached base files, and optional local/remote Markdown writes.",
-    "writes": "tmp/lark-md-sync/** by default; local Markdown metadata on track/push --apply; local Markdown files on pull/sync --apply; remote Lark Markdown files on push/sync --apply.",
+    "writes": "tmp/lark-md-sync/** by default; local Markdown lark_url metadata on track/push --apply; local Markdown files on pull/sync --apply; remote Lark Markdown files on push/sync --apply.",
     "idempotent": True,
     "safe_to_autorun": False,
 }
@@ -40,7 +40,7 @@ DEFAULT_CONFIG = Path("lark-md-sync.config.json")
 BASE_DIR = Path("tmp/lark-md-sync/base")
 FETCH_DIR = Path("tmp/lark-md-sync/fetch")
 MERGE_DIR = Path("tmp/lark-md-sync/merge")
-LARK_META_FIELDS = {"lark_url", "lark_file_token", "lark_synced_at"}
+LARK_META_FIELDS = {"lark_url"}
 STATE_VERSION = 1
 LARK_CLI = os.environ.get("SARA_LARK_CLI", "sara-lark-cli")
 META_CLI = os.environ.get("LARK_CLI", "lark-cli")
@@ -105,11 +105,7 @@ def quote_yaml(value: str) -> str:
 def with_lark_meta(text: str, mapping: dict[str, Any]) -> str:
     token = str(mapping.get("file_token") or "")
     url = str(mapping.get("url") or "") or (f"https://www.feishu.cn/docx/{token}" if token else "")
-    fields = {
-        "lark_url": url,
-        "lark_file_token": token,
-        "lark_synced_at": now_iso(),
-    }
+    fields = {"lark_url": url}
     parsed = split_frontmatter(text)
     if parsed is None:
         lines, body = [], text
@@ -1007,7 +1003,7 @@ def main(argv: list[str] | None = None) -> int:
         epilog="""commands:
   cd <lark-url>        Set current remote target in local state; no remote write.
   ls                  Show current target meta, child nodes/files, and tracked mappings.
-  track <md>          Bind local Markdown to a remote token; writes lark_* frontmatter with --apply.
+  track <md>          Bind local Markdown to a remote token; writes lark_url with --apply.
   untrack [md...]     Remove local mappings only; never delete remote files.
   init-config         Create lark-md-sync.config.json example.
   plan-config         Preview files selected by directory mappings.
@@ -1031,7 +1027,7 @@ examples:
     p.add_argument("--state", type=Path, default=DEFAULT_STATE)
     p.add_argument("--as", dest="identity", default="user", choices=["user", "bot"])
 
-    p = sub.add_parser("track", help="Track remote Markdown and write lark_* frontmatter with --apply.")
+    p = sub.add_parser("track", help="Track remote Markdown and write lark_url with --apply.")
     add_common(p)
     p.add_argument("path")
     p.add_argument("--file-token", required=True)
