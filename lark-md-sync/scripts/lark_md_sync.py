@@ -18,7 +18,7 @@ SCRIPT_META = {
     "summary": "Bidirectionally sync local Markdown files with Lark Drive native Markdown files via sara-lark-cli.",
     "inputs": "CLI subcommands (cd|track|status|push|pull|sync|untrack|init-config|plan-config|list|ls), local Markdown paths, config mappings, Lark file tokens or target folders, and a local state file.",
     "outputs": "stdout plan/status plus local state, cached base files, and optional local/remote Markdown writes.",
-    "writes": "tmp/lark-md-sync/** by default; local Markdown files on pull/sync --apply; remote Lark Markdown files on push/sync --apply.",
+    "writes": "tmp/lark-md-sync/** by default; local Markdown metadata on track/push --apply; local Markdown files on pull/sync --apply; remote Lark Markdown files on push/sync --apply.",
     "idempotent": True,
     "safe_to_autorun": False,
 }
@@ -40,6 +40,7 @@ DEFAULT_CONFIG = Path("lark-md-sync.config.json")
 BASE_DIR = Path("tmp/lark-md-sync/base")
 FETCH_DIR = Path("tmp/lark-md-sync/fetch")
 MERGE_DIR = Path("tmp/lark-md-sync/merge")
+LARK_META_FIELDS = {"lark_url", "lark_file_token", "lark_synced_at"}
 STATE_VERSION = 1
 LARK_CLI = os.environ.get("SARA_LARK_CLI", "sara-lark-cli")
 META_CLI = os.environ.get("LARK_CLI", "lark-cli")
@@ -75,6 +76,52 @@ def read_text(path: Path) -> str:
 def write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def split_frontmatter(text: str) -> tuple[list[str], str] | None:
+    if not text.startswith("---\n"):
+        return None
+    end = text.find("\n---\n", 4)
+    if end == -1:
+        return None
+    return text[4:end].splitlines(), text[end + 5 :]
+
+
+def strip_lark_meta(text: str) -> str:
+    parsed = split_frontmatter(text)
+    if parsed is None:
+        return text
+    lines, body = parsed
+    kept = [line for line in lines if line.split(":", 1)[0].strip() not in LARK_META_FIELDS]
+    if not kept:
+        return body
+    return "---\n" + "\n".join(kept).rstrip() + "\n---\n" + body
+
+
+def quote_yaml(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def with_lark_meta(text: str, mapping: dict[str, Any]) -> str:
+    token = str(mapping.get("file_token") or "")
+    url = str(mapping.get("url") or "") or (f"https://www.feishu.cn/docx/{token}" if token else "")
+    fields = {
+        "lark_url": url,
+        "lark_file_token": token,
+        "lark_synced_at": now_iso(),
+    }
+    parsed = split_frontmatter(text)
+    if parsed is None:
+        lines, body = [], text
+    else:
+        lines, body = parsed
+    kept = [line for line in lines if line.split(":", 1)[0].strip() not in LARK_META_FIELDS]
+    added = [f"{key}: {quote_yaml(value)}" for key, value in fields.items() if value]
+    return "---\n" + "\n".join([*kept, *added]).rstrip() + "\n---\n" + body
+
+
+def write_local_with_lark_meta(path: Path, text: str, mapping: dict[str, Any]) -> None:
+    write_text(path, with_lark_meta(text, mapping))
 
 
 def resolve_rel(root: Path, value: str) -> str:
@@ -181,7 +228,7 @@ def read_base(root: Path, mapping: dict[str, Any]) -> str | None:
 
 
 def update_mapping_base(root: Path, mapping: dict[str, Any], content: str) -> None:
-    mapping["base_sha256"] = cache_base(root, content)
+    mapping["base_sha256"] = cache_base(root, strip_lark_meta(content))
     mapping["updated_at"] = now_iso()
 
 
@@ -395,9 +442,9 @@ def file_status(root: Path, rel: str, mapping: dict[str, Any]) -> dict[str, Any]
     local_path = root / rel
     local_exists = local_path.exists()
     local_content = read_text(local_path) if local_exists else ""
-    local_sha = sha256_text(local_content) if local_exists else ""
+    local_sha = sha256_text(strip_lark_meta(local_content)) if local_exists else ""
     remote_content = fetch_remote(root, rel, mapping)
-    remote_sha = sha256_text(remote_content)
+    remote_sha = sha256_text(strip_lark_meta(remote_content))
     base_sha = str(mapping.get("base_sha256") or "")
     return {
         "path": rel,
@@ -477,13 +524,15 @@ def track(args: argparse.Namespace) -> int:
                 f"local file does not exist; use --pull-initial to create it from remote: {rel}"
             )
         if args.apply:
-            write_text(local_path, remote)
+            write_local_with_lark_meta(local_path, remote, mapping)
         else:
             print(f"DRY-RUN would create local file from remote: {rel}")
-    elif read_text(local_path) != remote:
+    elif strip_lark_meta(read_text(local_path)) != strip_lark_meta(remote):
         print(f"{rel}: local and remote differ; using remote as initial base")
     update_mapping_base(root, mapping, remote)
     if args.apply:
+        if local_path.exists():
+            write_local_with_lark_meta(local_path, read_text(local_path), mapping)
         state["files"][rel] = mapping
         save_state(args.state, state)
         print(f"tracked: {rel}")
@@ -579,6 +628,7 @@ def push(args: argparse.Namespace) -> int:
                     "tracked_at": now_iso(),
                 }
                 update_mapping_base(root, mapping, local)
+                write_local_with_lark_meta(root / rel, local, mapping)
                 state["files"][rel] = mapping
                 save_state(args.state, state)
                 print(f"created remote and tracked: {rel}")
@@ -591,6 +641,7 @@ def push(args: argparse.Namespace) -> int:
         overwrite_remote(root, rel, mapping, rel, args.apply)
         if args.apply:
             update_mapping_base(root, mapping, local)
+            write_local_with_lark_meta(root / rel, local, mapping)
             save_state(args.state, state)
             print(f"pushed: {rel}")
     if args.apply:
@@ -620,7 +671,7 @@ def pull_or_sync(args: argparse.Namespace, sync_mode: bool) -> int:
 
         if record["remote_changed"] and not record["local_changed"]:
             if args.apply:
-                write_text(local_path, remote)
+                write_local_with_lark_meta(local_path, remote, mapping)
                 update_mapping_base(root, mapping, remote)
                 save_state(args.state, state)
                 print(f"pulled: {rel}")
@@ -633,6 +684,7 @@ def pull_or_sync(args: argparse.Namespace, sync_mode: bool) -> int:
                 overwrite_remote(root, rel, mapping, rel, args.apply)
                 if args.apply:
                     update_mapping_base(root, mapping, local)
+                    write_local_with_lark_meta(local_path, local, mapping)
                     save_state(args.state, state)
                     print(f"pushed: {rel}")
             else:
@@ -644,7 +696,7 @@ def pull_or_sync(args: argparse.Namespace, sync_mode: bool) -> int:
             continue
         if args.on_conflict == "remote-wins":
             if args.apply:
-                write_text(local_path, remote)
+                write_local_with_lark_meta(local_path, remote, mapping)
                 update_mapping_base(root, mapping, remote)
                 save_state(args.state, state)
                 print(f"remote wins: {rel}")
@@ -660,6 +712,7 @@ def pull_or_sync(args: argparse.Namespace, sync_mode: bool) -> int:
             overwrite_remote(root, rel, mapping, rel, args.apply)
             if args.apply:
                 update_mapping_base(root, mapping, local)
+                write_local_with_lark_meta(local_path, local, mapping)
                 save_state(args.state, state)
                 print(f"local wins: {rel}")
             continue
@@ -671,7 +724,7 @@ def pull_or_sync(args: argparse.Namespace, sync_mode: bool) -> int:
         if not args.apply:
             print(f"DRY-RUN would merge {rel}; conflicted={conflicted}")
             continue
-        write_text(local_path, merged)
+        write_local_with_lark_meta(local_path, merged, mapping)
         if conflicted:
             print(f"merged with conflict markers; remote not overwritten: {rel}")
             continue
@@ -954,7 +1007,7 @@ def main(argv: list[str] | None = None) -> int:
         epilog="""commands:
   cd <lark-url>        Set current remote target in local state; no remote write.
   ls                  Show current target meta, child nodes/files, and tracked mappings.
-  track <md>          Bind a local Markdown file to an existing remote Markdown token.
+  track <md>          Bind local Markdown to a remote token; writes lark_* frontmatter with --apply.
   untrack [md...]     Remove local mappings only; never delete remote files.
   init-config         Create lark-md-sync.config.json example.
   plan-config         Preview files selected by directory mappings.
@@ -978,7 +1031,7 @@ examples:
     p.add_argument("--state", type=Path, default=DEFAULT_STATE)
     p.add_argument("--as", dest="identity", default="user", choices=["user", "bot"])
 
-    p = sub.add_parser("track", help="Track an existing remote Markdown file.")
+    p = sub.add_parser("track", help="Track remote Markdown and write lark_* frontmatter with --apply.")
     add_common(p)
     p.add_argument("path")
     p.add_argument("--file-token", required=True)
