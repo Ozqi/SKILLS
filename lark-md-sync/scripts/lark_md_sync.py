@@ -165,7 +165,7 @@ def iter_markdown_under(root: Path, local_dir: str) -> list[str]:
 
 def load_state(path: Path) -> dict[str, Any]:
     if not path.exists():
-        return {"version": STATE_VERSION, "files": {}}
+        return {"version": STATE_VERSION, "files": {}, "folders": {}}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -174,8 +174,11 @@ def load_state(path: Path) -> dict[str, Any]:
         raise ToolError(f"state must be a JSON object: {path}")
     data.setdefault("version", STATE_VERSION)
     data.setdefault("files", {})
+    data.setdefault("folders", {})
     if not isinstance(data["files"], dict):
         raise ToolError(f"state.files must be an object: {path}")
+    if not isinstance(data["folders"], dict):
+        raise ToolError(f"state.folders must be an object: {path}")
     return data
 
 
@@ -316,9 +319,14 @@ def config_plan(root: Path, config: dict[str, Any]) -> list[dict[str, str]]:
         mapping = str(item.get("name") or f"mapping-{index + 1}")
         for rel in iter_markdown_under(root, local_dir):
             name = Path(rel).name
+            subdir = ""
             if bool(item.get("preserve_subdirs", False)):
                 prefix = "" if local_dir == "." else local_dir.rstrip("/") + "/"
-                name = rel.removeprefix(prefix).replace("/", "__")
+                subdir = str(Path(rel.removeprefix(prefix)).parent)
+                if subdir == ".":
+                    subdir = ""
+                if subdir and target_flag == "--wiki-token":
+                    raise ToolError("preserve_subdirs requires a Drive folder target, not wiki_token")
             plan.append(
                 {
                     "mapping": mapping,
@@ -327,6 +335,7 @@ def config_plan(root: Path, config: dict[str, Any]) -> list[dict[str, str]]:
                     "target": target,
                     "target_flag": target_flag,
                     "remote_name": name,
+                    "subdir": subdir,
                 }
             )
     return plan
@@ -390,6 +399,58 @@ def create_remote(
     if not token:
         raise ToolError("could not find file token in create response")
     return token
+
+
+def folder_token(value: str) -> str:
+    parsed = urlparse(value)
+    parts = [part for part in parsed.path.split("/") if part]
+    if "folder" in parts:
+        index = parts.index("folder")
+        if index + 1 < len(parts):
+            return parts[index + 1]
+    return value
+
+
+def create_folder(root: Path, parent: str, name: str, identity: str, apply: bool) -> str:
+    cmd = [
+        META_CLI,
+        "drive",
+        "+create-folder",
+        "--name",
+        name,
+        "--as",
+        identity,
+        "--format",
+        "json",
+    ]
+    if parent:
+        cmd.extend(["--folder-token", folder_token(parent)])
+    if not apply:
+        print("DRY-RUN mkdir:", " ".join(cmd))
+        return ""
+    data = lark_data(cmd, root)
+    token = find_token(data)
+    if not token:
+        raise ToolError("could not find folder token in create-folder response")
+    return token
+
+
+def ensure_remote_subdir(root: Path, state: dict[str, Any], item: dict[str, str], apply: bool) -> list[str]:
+    subdir = item.get("subdir", "")
+    if not subdir:
+        return [item["target_flag"], item["target"]]
+    parent = item["target"]
+    prefix = f"{item['mapping']}:{folder_token(parent)}"
+    for part in Path(subdir).parts:
+        key = f"{prefix}/{part}"
+        token = state["folders"].get(key)
+        if not token:
+            token = create_folder(root, parent, part, item["identity"], apply)
+            if apply:
+                state["folders"][key] = token
+        parent = token or f"<folder:{key}>"
+        prefix = key
+    return ["--folder-token", parent]
 
 
 def overwrite_remote(
@@ -601,7 +662,9 @@ def push(args: argparse.Namespace) -> int:
         mapping = state["files"].get(rel)
         if not mapping:
             if args.config:
-                target = [item["target_flag"], item["target"]]
+                target = ensure_remote_subdir(root, state, item, args.apply)
+                if args.apply and item.get("subdir"):
+                    save_state(args.state, state)
             else:
                 target = []
                 if args.folder_token:
@@ -969,8 +1032,9 @@ def plan_config(args: argparse.Namespace) -> int:
     root = args.root.resolve()
     plan = config_plan(root, load_config(args.config))
     for item in plan:
+        subdir = item.get("subdir") or "."
         print(
-            f"{item['mapping']}\t{item['path']}\t{item['target_flag']} {item['target']}\t{item['remote_name']}"
+            f"{item['mapping']}\t{item['path']}\t{item['target_flag']} {item['target']}\t{subdir}\t{item['remote_name']}"
         )
     if args.json:
         print(json.dumps(plan, ensure_ascii=False, indent=2))
@@ -1008,7 +1072,7 @@ def main(argv: list[str] | None = None) -> int:
   init-config         Create lark-md-sync.config.json example.
   plan-config         Preview files selected by directory mappings.
   status [md...]      Compare local/base/remote content.
-  push [md...]        Push local Markdown to Lark; dry-run unless --apply.
+  push [md...]        Push local Markdown; preserve_subdirs creates Drive folders with --apply.
   pull [md...]        Pull remote Markdown to local; dry-run unless --apply.
   sync [md...]        Bidirectional sync with merge/conflict policy; dry-run unless --apply.
 
