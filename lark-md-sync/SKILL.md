@@ -1,6 +1,6 @@
 ---
 name: lark-md-sync
-description: Bidirectionally sync local Markdown files with Lark/Feishu Drive native Markdown files. Use when asked to track, status-check, push, pull, merge-sync, or browse Lark remote metadata with lark-sync cd/ls.
+description: Bidirectionally sync local Markdown files with Lark/Feishu online docs. Use when asked to track, status-check, push, pull, merge-sync, or browse Lark remote metadata with lark-sync cd/ls.
 ---
 
 # Lark Markdown Sync

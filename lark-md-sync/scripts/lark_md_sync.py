@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""本地 Markdown 目录与飞书 Drive 原生 Markdown 文件的同步器。
+"""本地 Markdown 目录与飞书在线文档的同步器。
 
 同步模型：
 1. `lark-md-sync.config.json` 只描述目录级映射：
    本地目录 `local_dir` <-> 飞书 Drive 文件夹 / Wiki 节点。
 2. `tmp/lark-md-sync/state.json` 记录文件级映射：
-   每个本地 `.md` <-> 一个飞书原生 Markdown 文件 token。
+   每个本地 `.md` <-> 一个飞书在线文档 docx/wiki URL。
 3. `tmp/lark-md-sync/base/` 缓存上次两端一致的版本，用于三方 merge。
 
 默认不写远端，也不改本地正文；只有显式传 `--apply` 才执行写入。
@@ -15,10 +15,10 @@ from __future__ import annotations
 
 SCRIPT_META = {
     "name": "lark_md_sync",
-    "summary": "Bidirectionally sync local Markdown files with Lark Drive native Markdown files via sara-lark-cli.",
-    "inputs": "CLI subcommands (cd|track|status|push|pull|sync|untrack|init-config|plan-config|list|ls), local Markdown paths, config mappings, Lark file tokens or target folders, and a local state file.",
+    "summary": "Bidirectionally sync local Markdown files with Lark/Feishu online docs.",
+    "inputs": "CLI subcommands (cd|track|status|push|pull|sync|untrack|init-config|plan-config|list|ls), local Markdown paths, config mappings, Lark doc URLs/tokens or target folders, and a local state file.",
     "outputs": "stdout plan/status plus local state, cached base files, and optional local/remote Markdown writes.",
-    "writes": "tmp/lark-md-sync/** by default; local Markdown lark_url metadata on track/push --apply; local Markdown files on pull/sync --apply; remote Lark Markdown files on push/sync --apply.",
+    "writes": "tmp/lark-md-sync/** by default; local Markdown lark_url metadata on track/push --apply; local Markdown files on pull/sync --apply; remote Lark docs on push/sync --apply.",
     "idempotent": True,
     "safe_to_autorun": False,
 }
@@ -104,7 +104,7 @@ def quote_yaml(value: str) -> str:
 
 def with_lark_meta(text: str, mapping: dict[str, Any]) -> str:
     token = str(mapping.get("file_token") or "")
-    url = str(mapping.get("url") or "") or (f"https://www.feishu.cn/file/{token}" if token else "")
+    url = str(mapping.get("url") or "") or (f"https://www.feishu.cn/docx/{token}" if token else "")
     fields = {"lark_url": url}
     parsed = split_frontmatter(text)
     if parsed is None:
@@ -345,7 +345,7 @@ def lark_data(cmd: list[str], root: Path) -> Any:
 
 def find_token(value: Any) -> str | None:
     if isinstance(value, dict):
-        for key in ("file_token", "fileToken", "token", "obj_token", "objToken"):
+        for key in ("file_token", "fileToken", "document_id", "token", "obj_token", "objToken"):
             item = value.get(key)
             if isinstance(item, str) and item:
                 return item
@@ -425,30 +425,31 @@ def config_plan(root: Path, config: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def fetch_remote(root: Path, rel: str, mapping: dict[str, Any]) -> str:
-    """读取远端 Markdown 到 tmp 缓存，并返回内容。"""
-    file_token = mapping.get("file_token")
-    if not isinstance(file_token, str) or not file_token:
+    """Fetch a Lark doc as Markdown content."""
+    token = mapping.get("file_token")
+    if not isinstance(token, str) or not token:
         raise ToolError(f"missing file_token in state for {rel}")
     identity = str(mapping.get("identity") or "user")
-    out_rel = FETCH_DIR / safe_name(rel)
-    out_path = root / out_rel
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        LARK_CLI,
-        "markdown",
-        "+fetch",
-        "--as",
-        identity,
-        "--file-token",
-        file_token,
-        "--output",
-        out_rel.as_posix(),
-        "--overwrite",
-        "--format",
-        "json",
-    ]
-    run_cmd(cmd, root)
-    return read_text(out_path)
+    data = lark_data(
+        [
+            META_CLI,
+            "docs",
+            "+fetch",
+            "--as",
+            identity,
+            "--doc",
+            str(mapping.get("url") or token),
+            "--doc-format",
+            "markdown",
+            "--format",
+            "json",
+        ],
+        root,
+    )
+    document = data.get("document") if isinstance(data, dict) else {}
+    if not isinstance(document, dict) or not isinstance(document.get("content"), str):
+        raise ToolError("could not read Markdown content from docs +fetch response")
+    return document["content"]
 
 
 def create_remote(
@@ -459,28 +460,31 @@ def create_remote(
     apply: bool,
     target: list[str],
 ) -> str:
-    """创建远端 Markdown 文件；无 --apply 时只打印将执行的 CLI 命令。"""
+    """Create a Lark doc from local Markdown; dry-run only prints command."""
     cmd = [
-        LARK_CLI,
-        "markdown",
+        META_CLI,
+        "docs",
         "+create",
         "--as",
         identity,
-        "--file",
-        rel,
-        "--name",
-        name,
+        "--doc-format",
+        "markdown",
+        "--title",
+        Path(name).stem,
+        "--content",
+        "@" + rel,
         "--format",
         "json",
     ]
-    cmd.extend(target)
+    if len(target) == 2:
+        cmd.extend(["--parent-token", folder_token(target[1])])
     if not apply:
         print("DRY-RUN create:", " ".join(cmd))
         return ""
-    data = parse_json_stdout(run_cmd(cmd, root))
+    data = lark_data(cmd, root)
     token = find_token(data)
     if not token:
-        raise ToolError("could not find file token in create response")
+        raise ToolError("could not find document token in create response")
     return token
 
 
@@ -545,7 +549,7 @@ def move_remote(root: Path, token: str, folder: str, identity: str) -> None:
             "--file-token",
             token,
             "--type",
-            "file",
+            "docx",
             "--folder-token",
             folder_token(folder),
             "--as",
@@ -567,7 +571,7 @@ def rename_remote(root: Path, token: str, name: str, identity: str) -> None:
             "--file-token",
             token,
             "--type",
-            "file",
+            "docx",
             "--data",
             json.dumps({"new_title": name}, ensure_ascii=False),
             "--as",
@@ -588,7 +592,7 @@ def delete_remote(root: Path, token: str, identity: str) -> None:
             "--file-token",
             token,
             "--type",
-            "file",
+            "docx",
             "--as",
             identity,
             "--format",
@@ -602,28 +606,32 @@ def delete_remote(root: Path, token: str, identity: str) -> None:
 def overwrite_remote(
     root: Path, rel: str, mapping: dict[str, Any], file_rel: str, apply: bool
 ) -> None:
-    """覆盖远端 Markdown 文件；所有远端写入都集中经过这个函数。"""
-    file_token = mapping.get("file_token")
-    if not isinstance(file_token, str) or not file_token:
+    """Overwrite a Lark doc with local Markdown."""
+    token = mapping.get("file_token")
+    if not isinstance(token, str) or not token:
         raise ToolError(f"missing file_token in state for {rel}")
     identity = str(mapping.get("identity") or "user")
     cmd = [
-        LARK_CLI,
-        "markdown",
-        "+overwrite",
+        META_CLI,
+        "docs",
+        "+update",
         "--as",
         identity,
-        "--file-token",
-        file_token,
-        "--file",
-        (root / file_rel).resolve().relative_to(root.resolve()).as_posix(),
+        "--doc",
+        str(mapping.get("url") or token),
+        "--command",
+        "overwrite",
+        "--doc-format",
+        "markdown",
+        "--content",
+        "@" + (root / file_rel).resolve().relative_to(root.resolve()).as_posix(),
         "--format",
         "json",
     ]
     if not apply:
         print("DRY-RUN overwrite:", " ".join(cmd))
         return
-    run_cmd(cmd, root)
+    lark_data(cmd, root)
 
 
 def requested_targets(
@@ -1403,8 +1411,12 @@ def remote_markdown_tree(
                     folder_key_prefix,
                 )
             )
-        elif kind == "file" and name.endswith(".md") and token:
-            result[token] = {"remote_path": path, "type": kind, "url": str(item.get("url") or "")}
+        elif kind in {"docx", "file"} and token:
+            if kind == "file" and not name.endswith(".md"):
+                continue
+            file_name = name if name.endswith(".md") else f"{name}.md"
+            file_path = f"{prefix}/{file_name}" if prefix else file_name
+            result[token] = {"remote_path": file_path, "type": kind, "url": str(item.get("url") or "")}
     return result
 
 
@@ -1630,7 +1642,7 @@ def add_config(parser: argparse.ArgumentParser) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog=os.environ.get("LARK_MD_SYNC_PROG"),
-        description="Lark Markdown sync and read-only remote navigator for Agents.",
+        description="Sync local Markdown with Lark online docs and browse remote metadata.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""commands:
   cd <lark-url>        Set current remote target in local state; no remote write.
@@ -1703,7 +1715,7 @@ examples:
     add_config(p)
     p.add_argument("--json", action="store_true")
 
-    p = sub.add_parser("push", help="Push local Markdown to Lark Markdown.")
+    p = sub.add_parser("push", help="Push local Markdown to Lark docs.")
     add_common(p)
     add_config(p)
     p.add_argument("paths", nargs="*")
