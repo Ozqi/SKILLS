@@ -42,8 +42,7 @@ FETCH_DIR = Path("tmp/lark-md-sync/fetch")
 MERGE_DIR = Path("tmp/lark-md-sync/merge")
 LARK_META_FIELDS = {"lark_url"}
 STATE_VERSION = 1
-LARK_CLI = os.environ.get("SARA_LARK_CLI", "sara-lark-cli")
-META_CLI = os.environ.get("LARK_CLI", "lark-cli")
+LARK_CLI = os.environ.get("LARK_CLI", "lark-cli")
 
 
 class ToolError(Exception):
@@ -432,7 +431,7 @@ def fetch_remote(root: Path, rel: str, mapping: dict[str, Any]) -> str:
     identity = str(mapping.get("identity") or "user")
     data = lark_data(
         [
-            META_CLI,
+            LARK_CLI,
             "docs",
             "+fetch",
             "--as",
@@ -462,7 +461,7 @@ def create_remote(
 ) -> str:
     """Create a Lark doc from local Markdown; dry-run only prints command."""
     cmd = [
-        META_CLI,
+        LARK_CLI,
         "docs",
         "+create",
         "--as",
@@ -500,7 +499,7 @@ def folder_token(value: str) -> str:
 
 def create_folder(root: Path, parent: str, name: str, identity: str, apply: bool) -> str:
     cmd = [
-        META_CLI,
+        LARK_CLI,
         "drive",
         "+create-folder",
         "--name",
@@ -543,7 +542,7 @@ def ensure_remote_subdir(root: Path, state: dict[str, Any], item: dict[str, str]
 def move_remote(root: Path, token: str, folder: str, identity: str) -> None:
     lark_data(
         [
-            META_CLI,
+            LARK_CLI,
             "drive",
             "+move",
             "--file-token",
@@ -564,7 +563,7 @@ def move_remote(root: Path, token: str, folder: str, identity: str) -> None:
 def rename_remote(root: Path, token: str, name: str, identity: str) -> None:
     lark_data(
         [
-            META_CLI,
+            LARK_CLI,
             "drive",
             "files",
             "patch",
@@ -586,7 +585,7 @@ def rename_remote(root: Path, token: str, name: str, identity: str) -> None:
 def delete_remote(root: Path, token: str, identity: str) -> None:
     lark_data(
         [
-            META_CLI,
+            LARK_CLI,
             "drive",
             "+delete",
             "--file-token",
@@ -612,7 +611,7 @@ def overwrite_remote(
         raise ToolError(f"missing file_token in state for {rel}")
     identity = str(mapping.get("identity") or "user")
     cmd = [
-        META_CLI,
+        LARK_CLI,
         "docs",
         "+update",
         "--as",
@@ -1289,7 +1288,7 @@ def inspect_current(root: Path, current: dict[str, Any]) -> dict[str, Any]:
     identity = str(current.get("identity") or "user")
     return lark_data(
         [
-            META_CLI,
+            LARK_CLI,
             "drive",
             "+inspect",
             "--url",
@@ -1308,7 +1307,7 @@ def wiki_children(root: Path, current: dict[str, Any], page_size: int) -> list[A
     identity = str(current.get("identity") or "user")
     node = lark_data(
         [
-            META_CLI,
+            LARK_CLI,
             "wiki",
             "+node-get",
             "--node-token",
@@ -1324,7 +1323,7 @@ def wiki_children(root: Path, current: dict[str, Any], page_size: int) -> list[A
         return []
     data = lark_data(
         [
-            META_CLI,
+            LARK_CLI,
             "wiki",
             "+node-list",
             "--space-id",
@@ -1346,7 +1345,7 @@ def wiki_children(root: Path, current: dict[str, Any], page_size: int) -> list[A
 def folder_children(root: Path, token: str, identity: str, page_size: int) -> list[Any]:
     data = lark_data(
         [
-            META_CLI,
+            LARK_CLI,
             "drive",
             "files",
             "list",
@@ -1374,7 +1373,7 @@ def remote_markdown_tree(
 ) -> dict[str, dict[str, str]]:
     data = lark_data(
         [
-            META_CLI,
+            LARK_CLI,
             "drive",
             "files",
             "list",
