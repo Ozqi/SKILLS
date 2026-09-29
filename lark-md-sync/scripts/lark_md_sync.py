@@ -344,7 +344,7 @@ def lark_data(cmd: list[str], root: Path) -> Any:
 
 def find_token(value: Any) -> str | None:
     if isinstance(value, dict):
-        for key in ("file_token", "fileToken", "document_id", "token", "obj_token", "objToken"):
+        for key in ("file_token", "fileToken", "document_id", "node_token", "token", "obj_token", "objToken"):
             item = value.get(key)
             if isinstance(item, str) and item:
                 return item
@@ -374,7 +374,8 @@ def config_specs(root: Path, config: dict[str, Any]) -> list[dict[str, Any]]:
         elif item.get("folder_token"):
             target_flag, target = "--folder-token", str(item["folder_token"])
         elif item.get("target_url"):
-            target_flag, target = "--folder-token", str(item["target_url"])
+            target = str(item["target_url"])
+            target_flag = "--wiki-token" if "/wiki/" in urlparse(target).path else "--folder-token"
         else:
             raise ToolError("each mapping requires folder_token, wiki_token, or target_url")
         specs.append(
@@ -407,8 +408,6 @@ def config_plan(root: Path, config: dict[str, Any]) -> list[dict[str, str]]:
                 subdir = str(Path(rel.removeprefix(prefix)).parent)
                 if subdir == ".":
                     subdir = ""
-                if subdir and target_flag == "--wiki-token":
-                    raise ToolError("preserve_subdirs requires a Drive folder target, not wiki_token")
             plan.append(
                 {
                     "mapping": mapping,
@@ -497,6 +496,16 @@ def folder_token(value: str) -> str:
     return value
 
 
+def wiki_token(value: str) -> str:
+    parsed = urlparse(value)
+    parts = [part for part in parsed.path.split("/") if part]
+    if "wiki" in parts:
+        index = parts.index("wiki")
+        if index + 1 < len(parts):
+            return parts[index + 1]
+    return value
+
+
 def create_folder(root: Path, parent: str, name: str, identity: str, apply: bool) -> str:
     cmd = [
         LARK_CLI,
@@ -521,11 +530,49 @@ def create_folder(root: Path, parent: str, name: str, identity: str, apply: bool
     return token
 
 
+def create_wiki_node(root: Path, parent: str, title: str, identity: str, apply: bool) -> str:
+    cmd = [
+        LARK_CLI,
+        "wiki",
+        "+node-create",
+        "--parent-node-token",
+        wiki_token(parent),
+        "--title",
+        title,
+        "--obj-type",
+        "docx",
+        "--as",
+        identity,
+        "--format",
+        "json",
+    ]
+    if not apply:
+        print("DRY-RUN wiki-mkdir:", " ".join(cmd))
+        return ""
+    data = lark_data(cmd, root)
+    token = find_token(data)
+    if not token:
+        raise ToolError("could not find wiki node token in node-create response")
+    return token
+
+
 def ensure_remote_subdir(root: Path, state: dict[str, Any], item: dict[str, str], apply: bool) -> list[str]:
     subdir = item.get("subdir", "")
     if not subdir:
         return [item["target_flag"], item["target"]]
     parent = item["target"]
+    if item["target_flag"] == "--wiki-token":
+        prefix = f"{item['mapping']}:wiki:{wiki_token(parent)}"
+        for part in Path(subdir).parts:
+            key = f"{prefix}/{part}"
+            token = state["folders"].get(key)
+            if not token:
+                token = create_wiki_node(root, parent, part, item["identity"], apply)
+                if apply:
+                    state["folders"][key] = token
+            parent = token or f"<wiki:{key}>"
+            prefix = key
+        return ["--parent-token", parent]
     prefix = f"{item['mapping']}:{folder_token(parent)}"
     for part in Path(subdir).parts:
         key = f"{prefix}/{part}"
@@ -539,7 +586,27 @@ def ensure_remote_subdir(root: Path, state: dict[str, Any], item: dict[str, str]
     return ["--folder-token", parent]
 
 
-def move_remote(root: Path, token: str, folder: str, identity: str) -> None:
+def move_remote(root: Path, token: str, folder: str, identity: str, target_flag: str) -> None:
+    if target_flag == "--wiki-token":
+        lark_data(
+            [
+                LARK_CLI,
+                "wiki",
+                "+move",
+                "--obj-token",
+                token,
+                "--obj-type",
+                "docx",
+                "--target-parent-token",
+                wiki_token(folder),
+                "--as",
+                identity,
+                "--format",
+                "json",
+            ],
+            root,
+        )
+        return
     lark_data(
         [
             LARK_CLI,
@@ -582,7 +649,26 @@ def rename_remote(root: Path, token: str, name: str, identity: str) -> None:
     )
 
 
-def delete_remote(root: Path, token: str, identity: str) -> None:
+def delete_remote(root: Path, token: str, identity: str, target_flag: str) -> None:
+    if target_flag == "--wiki-token":
+        lark_data(
+            [
+                LARK_CLI,
+                "wiki",
+                "+node-delete",
+                "--node-token",
+                token,
+                "--obj-type",
+                "docx",
+                "--as",
+                identity,
+                "--format",
+                "json",
+                "--yes",
+            ],
+            root,
+        )
+        return
     lark_data(
         [
             LARK_CLI,
@@ -918,7 +1004,7 @@ def target_folder_for_path(
 ) -> str:
     parent = Path(safe_relative_path(relative_path)).parent.as_posix()
     if parent == ".":
-        return folder_token(str(spec["target"]))
+        return wiki_token(str(spec["target"])) if spec["target_flag"] == "--wiki-token" else folder_token(str(spec["target"]))
     item = {
         "mapping": str(spec["mapping"]),
         "target_flag": str(spec["target_flag"]),
@@ -926,7 +1012,8 @@ def target_folder_for_path(
         "identity": str(spec["identity"]),
         "subdir": parent,
     }
-    return folder_token(ensure_remote_subdir(root, state, item, True)[1])
+    token = ensure_remote_subdir(root, state, item, True)[1]
+    return wiki_token(token) if spec["target_flag"] == "--wiki-token" else folder_token(token)
 
 
 def apply_structural_actions(
@@ -1063,14 +1150,14 @@ def apply_structural_actions(
             relative = safe_relative_path(action["to"])
             if Path(relative).parent.as_posix() != ".":
                 folder = target_folder_for_path(root, state, spec, relative)
-                move_remote(root, token, folder, str(spec["identity"]))
+                move_remote(root, token, folder, str(spec["identity"]), str(spec["target_flag"]))
             rename_remote(root, token, Path(relative).name, str(spec["identity"]))
             state_mapping(state, spec, token, relative)
         elif kind == "move_remote":
             relative = safe_relative_path(action["to"])
             if Path(action["from"]).parent != Path(relative).parent:
                 folder = target_folder_for_path(root, state, spec, relative)
-                move_remote(root, token, folder, str(spec["identity"]))
+                move_remote(root, token, folder, str(spec["identity"]), str(spec["target_flag"]))
             rename_remote(root, token, Path(relative).name, str(spec["identity"]))
             state_mapping(state, spec, token, relative)
         elif kind == "move_local":
@@ -1093,7 +1180,7 @@ def apply_structural_actions(
             )
             state["files"][new_key] = mapping
         elif kind == "delete_remote":
-            delete_remote(root, token, str(spec["identity"]))
+            delete_remote(root, token, str(spec["identity"]), str(spec["target_flag"]))
             old_key, _ = state_entry_by_token(state, token)
             if old_key:
                 state["files"].pop(old_key, None)
@@ -1363,6 +1450,54 @@ def folder_children(root: Path, token: str, identity: str, page_size: int) -> li
     return data_items(data)
 
 
+def remote_wiki_tree(
+    root: Path,
+    parent_node: str,
+    space_id: str,
+    identity: str,
+    prefix: str = "",
+    folders: dict[str, str] | None = None,
+    folder_key_prefix: str = "",
+) -> dict[str, dict[str, str]]:
+    data = lark_data(
+        [
+            LARK_CLI,
+            "wiki",
+            "+node-list",
+            "--space-id",
+            space_id,
+            "--parent-node-token",
+            wiki_token(parent_node),
+            "--page-all",
+            "--as",
+            identity,
+            "--format",
+            "json",
+        ],
+        root,
+    )
+    result: dict[str, dict[str, str]] = {}
+    for item in data_items(data):
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "")
+        node_token = str(item.get("node_token") or "")
+        obj_token = str(item.get("obj_token") or "")
+        obj_type = str(item.get("obj_type") or "")
+        path = f"{prefix}/{title}" if prefix else title
+        if item.get("has_child"):
+            if folders is not None and folder_key_prefix:
+                folders[f"{folder_key_prefix}/{path}"] = node_token
+            result.update(
+                remote_wiki_tree(root, node_token, space_id, identity, path, folders, folder_key_prefix)
+            )
+        elif obj_type == "docx" and obj_token:
+            file_name = title if title.endswith(".md") else f"{title}.md"
+            file_path = f"{prefix}/{file_name}" if prefix else file_name
+            result[obj_token] = {"remote_path": file_path, "type": obj_type, "url": f"https://www.feishu.cn/docx/{obj_token}"}
+    return result
+
+
 def remote_markdown_tree(
     root: Path,
     folder: str,
@@ -1494,20 +1629,43 @@ def structural_plan_for_config(
 ) -> list[dict[str, str]]:
     actions: list[dict[str, str]] = []
     for spec in config_specs(root, config):
-        if spec["target_flag"] != "--folder-token":
-            raise ToolError("structural sync requires Drive folder targets")
         local, new_local = local_markdown_tree(root, spec)
-        folder_prefix = f"{spec['mapping']}:{folder_token(str(spec['target']))}"
-        remote = {
-            token: item["remote_path"]
-            for token, item in remote_markdown_tree(
+        if spec["target_flag"] == "--folder-token":
+            folder_prefix = f"{spec['mapping']}:{folder_token(str(spec['target']))}"
+            remote_items = remote_markdown_tree(
                 root,
                 str(spec["target"]),
                 str(spec["identity"]),
                 folders=state["folders"],
                 folder_key_prefix=folder_prefix,
-            ).items()
-        }
+            )
+        elif spec["target_flag"] == "--wiki-token":
+            node = lark_data(
+                [
+                    LARK_CLI,
+                    "wiki",
+                    "+node-get",
+                    "--node-token",
+                    str(spec["target"]),
+                    "--as",
+                    str(spec["identity"]),
+                    "--format",
+                    "json",
+                ],
+                root,
+            )
+            folder_prefix = f"{spec['mapping']}:wiki:{wiki_token(str(spec['target']))}"
+            remote_items = remote_wiki_tree(
+                root,
+                str(node["node_token"]),
+                str(node["space_id"]),
+                str(spec["identity"]),
+                folders=state["folders"],
+                folder_key_prefix=folder_prefix,
+            )
+        else:
+            raise ToolError("unsupported structural sync target")
+        remote = {token: item["remote_path"] for token, item in remote_items.items()}
         previous = previous_tree(state, spec)
         recovery, staged_tokens = recover_staged_remote_actions(previous, remote)
         for action in recovery:
