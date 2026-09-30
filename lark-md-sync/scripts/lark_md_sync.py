@@ -170,7 +170,7 @@ def structural_plan(
             continue
         if not remote_path:
             if local_path == old_local:
-                actions.append({"action": "create_remote", "token": token, "to": local_path})
+                actions.append({"action": "delete_local", "token": token, "from": local_path})
             else:
                 actions.append({"action": "conflict", "token": token, "reason": "remote-delete-vs-local-move"})
             continue
@@ -1623,9 +1623,6 @@ def structural_plan_for_config(
         local, new_local = local_markdown_tree(root, spec)
         if spec["target_flag"] == "--folder-token":
             folder_prefix = f"{spec['mapping']}:{folder_token(str(spec['target']))}"
-            for key in list(state["folders"]):
-                if key.startswith(folder_prefix + "/"):
-                    state["folders"].pop(key, None)
             remote_items = remote_markdown_tree(
                 root,
                 str(spec["target"]),
@@ -1649,9 +1646,6 @@ def structural_plan_for_config(
                 root,
             )
             folder_prefix = f"{spec['mapping']}:wiki:{wiki_token(str(spec['target']))}"
-            for key in list(state["folders"]):
-                if key.startswith(folder_prefix + "/"):
-                    state["folders"].pop(key, None)
             remote_items = remote_wiki_tree(
                 root,
                 str(node["node_token"]),
@@ -1808,7 +1802,7 @@ def main(argv: list[str] | None = None) -> int:
   status [md...]      Compare local/base/remote content.
   push [md...]        Push local Markdown; preserve_subdirs creates Drive folders with --apply.
   pull [md...]        Pull remote Markdown to local; dry-run unless --apply.
-  sync [md...]        Local-wins structure + bidirectional content sync; deletes need --apply --delete.
+  sync [md...]        Bidirectional content + move/rename/delete sync; deletes need --apply --delete.
 
 examples:
   lark-sync cd 'https://bytedance.larkoffice.com/wiki/xxx'
