@@ -170,22 +170,15 @@ def structural_plan(
             continue
         if not remote_path:
             if local_path == old_local:
-                actions.append({"action": "delete_local", "token": token, "from": local_path})
+                actions.append({"action": "create_remote", "token": token, "to": local_path})
             else:
                 actions.append({"action": "conflict", "token": token, "reason": "remote-delete-vs-local-move"})
             continue
 
-        local_moved = local_path != old_local
-        remote_moved = remote_path != old_remote
-        if local_moved and remote_moved:
-            if local_path == remote_path:
-                actions.append({"action": "repath", "token": token, "to": local_path})
-            else:
-                actions.append({"action": "conflict", "token": token, "reason": "both-moved"})
-        elif local_moved:
+        if local_path != remote_path:
             actions.append({"action": "move_remote", "token": token, "from": remote_path, "to": local_path})
-        elif remote_moved:
-            actions.append({"action": "move_local", "token": token, "from": local_path, "to": remote_path})
+        elif local_path != old_local or remote_path != old_remote:
+            actions.append({"action": "repath", "token": token, "to": local_path})
     return actions
 
 
@@ -468,7 +461,7 @@ def create_remote(
         "--doc-format",
         "markdown",
         "--title",
-        Path(name).stem,
+        name,
         "--content",
         "@" + rel,
         "--format",
@@ -1492,8 +1485,7 @@ def remote_wiki_tree(
                 remote_wiki_tree(root, node_token, space_id, identity, path, folders, folder_key_prefix)
             )
         elif obj_type == "docx" and obj_token:
-            file_name = title if title.endswith(".md") else f"{title}.md"
-            file_path = f"{prefix}/{file_name}" if prefix else file_name
+            file_path = f"{prefix}/{title}" if prefix else title
             result[obj_token] = {"remote_path": file_path, "type": obj_type, "url": f"https://www.feishu.cn/docx/{obj_token}"}
     return result
 
@@ -1548,8 +1540,7 @@ def remote_markdown_tree(
         elif kind in {"docx", "file"} and token:
             if kind == "file" and not name.endswith(".md"):
                 continue
-            file_name = name if name.endswith(".md") else f"{name}.md"
-            file_path = f"{prefix}/{file_name}" if prefix else file_name
+            file_path = f"{prefix}/{name}" if prefix else name
             result[token] = {"remote_path": file_path, "type": kind, "url": str(item.get("url") or "")}
     return result
 
@@ -1632,6 +1623,9 @@ def structural_plan_for_config(
         local, new_local = local_markdown_tree(root, spec)
         if spec["target_flag"] == "--folder-token":
             folder_prefix = f"{spec['mapping']}:{folder_token(str(spec['target']))}"
+            for key in list(state["folders"]):
+                if key.startswith(folder_prefix + "/"):
+                    state["folders"].pop(key, None)
             remote_items = remote_markdown_tree(
                 root,
                 str(spec["target"]),
@@ -1655,6 +1649,9 @@ def structural_plan_for_config(
                 root,
             )
             folder_prefix = f"{spec['mapping']}:wiki:{wiki_token(str(spec['target']))}"
+            for key in list(state["folders"]):
+                if key.startswith(folder_prefix + "/"):
+                    state["folders"].pop(key, None)
             remote_items = remote_wiki_tree(
                 root,
                 str(node["node_token"]),
@@ -1811,7 +1808,7 @@ def main(argv: list[str] | None = None) -> int:
   status [md...]      Compare local/base/remote content.
   push [md...]        Push local Markdown; preserve_subdirs creates Drive folders with --apply.
   pull [md...]        Pull remote Markdown to local; dry-run unless --apply.
-  sync [md...]        Bidirectional content + move/rename/delete sync; deletes need --apply --delete.
+  sync [md...]        Local-wins structure + bidirectional content sync; deletes need --apply --delete.
 
 examples:
   lark-sync cd 'https://bytedance.larkoffice.com/wiki/xxx'
