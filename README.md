@@ -17,11 +17,12 @@ Personal reusable skills for TRAE CLI, Claude Code, and related agent workflows.
 
 ### 通用 / Agent 工作流
 
-| Skill | 目录 | 标签 | 用途 |
-| --- | --- | --- | --- |
-| `asd-ste100` | `asd-ste100/` | `writing`、`prompt`、`controlled-language`、`lint` | 用 ASD-STE100 风格改写含歧义的英文 Agent 输出、工具说明、错误消息和跨 Agent 指令。 |
-| `opencode-final-answer-style` | `opencode-final-answer-style/` | `output`、`markdown`、`cli`、`style` | 统一 coding agent 最终回复风格，保持简洁、可扫读、路径可点击。 |
-| `sync-agent-rules` | `agent-sync-prompts/` | `agents`、`rules`、`sync`、`codex`、`claude` | 同步 `AGENTS.md`、`CLAUDE.md`、`.agents/`、`.claude/`、`.opencode/` 等 Agent 规则和 skill 副本。 |
+| Skill                         | 目录                             | 标签                                              | 用途                                                                                  |
+| ----------------------------- | ------------------------------ | ----------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `asd-ste100`                  | `asd-ste100/`                  | `writing`、`prompt`、`controlled-language`、`lint` | 用 ASD-STE100 风格改写含歧义的英文 Agent 输出、工具说明、错误消息和跨 Agent 指令。                              |
+| `man-skill`                   | `man-skill/`                   | `profile`、`preferences`、`ziqi`                    | 读取并应用 `man.md` 中的个人偏好。                                                         |
+| `opencode-final-answer-style` | `opencode-final-answer-style/` | `output`、`markdown`、`cli`、`style`               | 统一 coding agent 最终回复风格，保持简洁、可扫读、路径可点击。                                              |
+| `sync-agent-rules`            | `agent-sync-prompts/`          | `agents`、`rules`、`sync`、`codex`、`claude`        | 同步 `AGENTS.md`、`CLAUDE.md`、`.agents/`、`.claude/`、`.opencode/` 等 Agent 规则和 skill 副本。 |
 
 ### 工具 / 运行环境
 
@@ -47,11 +48,6 @@ Personal reusable skills for TRAE CLI, Claude Code, and related agent workflows.
 | `draw-mermaid` | `draw-mermaid/` | `mermaid`、`diagram`、`architecture`、`flowchart` | 将需求或 topology JSON 渲染为 Mermaid 图，`DESIGN.md` 维护视觉风格。 |
 | `draw-drawio-xml` | `draw-drawio-xml/` | `drawio`、`xml`、`diagram`、`architecture` | 将拓扑 JSON 或自然语言关系生成 draw.io / diagrams.net 可导入 XML。 |
 
-### 领域项目 / 个人约定
-
-| Skill | 目录 | 标签 | 用途 |
-| --- | --- | --- | --- |
-| `ziqi的约定` | `ziqi的约定/` | `ziqi`、`project-conventions`、`style` | Ziqi 项目的目录、输出风格、工具使用和代码协作约定。 |
 
 ### 占位 / 待整理
 
