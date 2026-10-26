@@ -20,6 +20,7 @@ Personal reusable skills for TRAE CLI, Claude Code, and related agent workflows.
 | Skill                         | 目录                             | 标签                                              | 用途                                                                                  |
 | ----------------------------- | ------------------------------ | ----------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `asd-ste100`                  | `asd-ste100/`                  | `writing`、`prompt`、`controlled-language`、`lint` | 用 ASD-STE100 风格改写含歧义的英文 Agent 输出、工具说明、错误消息和跨 Agent 指令。                              |
+| `ponytail`                    | `ponytail/`                    | `coding`、`yagni`、`minimalism`、`review`           | 以“别那么勤快”的懒惰资深开发者模式，优先复用现有能力并完成最小完整改动；保留完整上游多 Agent 适配。                  |
 | `man-skill`                   | `man-skill/`                   | `profile`、`preferences`、`ziqi`                    | 读取并应用 `man.md` 中的个人偏好。                                                         |
 | `opencode-final-answer-style` | `opencode-final-answer-style/` | `output`、`markdown`、`cli`、`style`               | 统一 coding agent 最终回复风格，保持简洁、可扫读、路径可点击。                                              |
 | `sync-agent-rules`            | `agent-sync-prompts/`          | `agents`、`rules`、`sync`、`codex`、`claude`        | 同步 `AGENTS.md`、`CLAUDE.md`、`.agents/`、`.claude/`、`.opencode/` 等 Agent 规则和 skill 副本。 |
@@ -39,6 +40,12 @@ Personal reusable skills for TRAE CLI, Claude Code, and related agent workflows.
 | --- | --- | --- | --- |
 | `canonical-code-link` | `canonical-code-link/` | `code-link`、`markdown`、`github`、`vscode` | 生成和审阅可点击的代码位置链接，包括本地路径、IDE 链接和 GitHub `blob` 链接。 |
 | `code-commit-style` | `code-commit-style/` | `git`、`commit`、`conventional-commits` | 按 Conventional Commits 写、审阅或规范化提交信息；描述提交前先看实际 diff。 |
+
+### 前端 / 设计 / 动效
+
+| Skill | 目录 | 标签 | 用途 |
+| --- | --- | --- | --- |
+| `jupyter-style-skill` | `jupyter-style-skill/` | `frontend`、`notebook`、`jupyter`、`style` | 仅在用户主动提出 Jupyter/notebook 风格时，为界面或文档应用 cell 导向的视觉与交互规范。 |
 
 ### 可视化 / 架构表达
 
